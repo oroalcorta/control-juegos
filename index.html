@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #111;
+      color: #eee;
+    }
+    input, select {
+      padding: 10px;
+      font-size: 1rem;
+      margin: 10px;
+      width: 300px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #222;
+    }
+    tr:nth-child(even) {
+      background-color: #1a1a1a;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎰 Panel de Administración</h1>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
+  <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+  <input type="text" id="searchInput" placeholder="🔎 Buscar por usuario..." style="width: 220px;">
+  <select id="casinoFilter" style="width: 200px;">
+    <option value="">🎲 Todos los Casinos</option>
+  </select>
+  <select id="juegoFilter" style="width: 200px;">
+    <option value="">🎮 Todos los Juegos</option>
+  </select>
+  <input type="date" id="dateFilter" style="width: 140px;">
+</div>
+
+  <!-- 📊 Gráfico ajustado al espacio derecho -->
+  <div style="flex-shrink: 0;">
+    <div style="flex-shrink: 0; margin-top: 5px;">
+  <canvas id="graficoPremios" style="width: 450px; height: 200px; background: none; border: none; padding: 0;"></canvas>
+</div>
+  </div>
+</div>
+<div id="resumenGeneral" style="margin: 15px 0 0 0; font-size: 1.1rem; color: #ccc;">
+  🔄 Cargando resumen general...
+</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Premio</th>
+        <th>Fecha</th>
+        <th>Hora</th>
+        <th>Casino</th>
+      </tr>
+    </thead>
+    <tbody id="resultTable">
+      <tr><td colspan="5">Cargando datos...</td></tr>
+    </tbody>
+  </table>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let grafico = null;
+
+function limpiarPremio(premioRaw) {
+  return premioRaw
+    ?.replace(/[^A-Z0-9.% ]/gi, '')   // Elimina emojis
+    .replace(/\s+/g, ' ')             // Normaliza espacios
+    .trim()
+    .toUpperCase();                   // Mayúsculas
+}
+
+function actualizarGrafico(filtrados) {
+  const premiosValidos = [
+    "100 % BONI",
+    "50 % BONI",
+    "20 % BONI",
+    "10.000 GRATIS",
+    "5.000 GRATIS",
+    "2.500 GRATIS"
+  ];
+
+  const premiosContados = {};
+  premiosValidos.forEach(p => premiosContados[p] = 0);
+
+  filtrados.forEach(reg => {
+    const limpio = limpiarPremio(reg.premio);
+    if (premiosContados.hasOwnProperty(limpio)) {
+      premiosContados[limpio]++;
+    }
+  });
+
+  const labels = Object.keys(premiosContados);
+  const datos = Object.values(premiosContados);
+  const total = datos.reduce((a, b) => a + b, 0);
+  const porcentajes = datos.map(cant => total ? ((cant / total) * 100).toFixed(1) : 0);
+
+  const colores = [
+    "#f39c12", "#e67e22", "#3498db", "#2ecc71", "#9b59b6", "#c0392b"
+  ];
+
+  const config = {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Cantidad de premios entregados',
+        data: datos,
+        backgroundColor: colores
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1 }
+        }
+      }
+    }
+  };
+
+  if (grafico) grafico.destroy();
+  const ctx = document.getElementById("graficoPremios").getContext("2d");
+  grafico = new Chart(ctx, config);
+}
+</script>
+
+  <script>
+    const SUPABASE_URL = 'https://wpoutjkljkrbliikazkh.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indwb3V0amtsamtyYmxpaWthemtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5ODAxMjAsImV4cCI6MjA2ODU1NjEyMH0.8aZys2dBiNbLis7ls7ZwiBt25eWbsSvSzjpO21Al2r8';
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let registros = [];
+
+    async function cargarRegistros() {
+      const { data, error } = await client
+        .from('giros')
+        .select('*')
+        .order('fecha', { ascending: false })
+        .order('hora', { ascending: false });
+
+      if (error) return console.error('❌ Error:', error);
+
+      registros = data;
+      renderTable();
+      llenarOpcionesCasino();
+      llenarOpcionesJuego();
+    }
+    function renderTable() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const casinoSeleccionado = document.getElementById('casinoFilter').value;
+      const juegoSeleccionado = document.getElementById('juegoFilter').value;
+      const fechaSeleccionada = document.getElementById('dateFilter').value;
+      const tbody = document.getElementById('resultTable');
+
+      const filtrados = registros.filter(reg =>
+        (!search || reg.usuario?.toLowerCase().includes(search)) &&
+        (!casinoSeleccionado || reg.casino === casinoSeleccionado) &&
+        (!juegoSeleccionado || reg.juego === juegoSeleccionado) && 
+        (!fechaSeleccionada || reg.fecha === fechaSeleccionada)
+      );
+
+      tbody.innerHTML = filtrados.length
+        ? filtrados.map(reg => {
+            const horaUTC = new Date(reg.hora);
+const horaARG = new Date(horaUTC.getTime() - (3 * 60 * 60 * 1000)); // UTC-3
+const horaLocal = horaARG.toTimeString().split(' ')[0]; // HH:MM:SS
+            return `
+              <tr>
+                <td>${reg.usuario}</td>
+                <td>${reg.premio}</td>
+                <td>${reg.fecha}</td>
+                <td>${horaLocal}</td>
+                <td>${reg.casino}</td>
+              </tr>`;
+          }).join('')
+        : '<tr><td colspan="5">Sin resultados</td></tr>';
+        actualizarGrafico(filtrados);
+        document.getElementById('resumenGeneral').innerHTML = `🧮 Total de participantes: <b>${filtrados.length}</b>`;
+    }
+
+    function llenarOpcionesCasino() {
+      const select = document.getElementById('casinoFilter');
+      const casinosUnicos = [...new Set(registros.map(r => r.casino))];
+      casinosUnicos.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+      });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', renderTable);
+    document.getElementById('casinoFilter').addEventListener('change', renderTable);
+    document.getElementById('dateFilter').addEventListener('change', renderTable);
+    document.getElementById('dateFilter').addEventListener('keyup', e => {
+      if (e.key === 'Enter') renderTable();
+    });
+
+    // Establecer la fecha por defecto al día actual
+    document.getElementById('dateFilter').value = new Date().toISOString().split('T')[0];
+
+function llenarOpcionesJuego() {
+  const select = document.getElementById('juegoFilter');
+  const juegosUnicos = [...new Set(registros.map(r => r.juego))];
+  juegosUnicos.forEach(j => {
+    const opt = document.createElement('option');
+    opt.value = j;
+    opt.textContent = j;
+    select.appendChild(opt);
+  });
+}
+
+    cargarRegistros();
+  </script>
+</body>
+</html>
