@@ -40,6 +40,7 @@
   <h1>🎰 Panel de Administración</h1>
   <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
   <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+    <button onclick="cargarRegistros()" style="padding: 10px; font-size: 1rem; height: 44px;">🔄</button>
   <input type="text" id="searchInput" placeholder="🔎 Buscar por usuario..." style="width: 220px;">
   <select id="casinoFilter" style="width: 200px;">
     <option value="">🎲 Todos los Casinos</option>
@@ -80,49 +81,37 @@ let grafico = null;
 
 function limpiarPremio(premioRaw) {
   return premioRaw
-    ?.replace(/[^A-Z0-9.% ]/gi, '')   // Elimina emojis
-    .replace(/\s+/g, ' ')             // Normaliza espacios
+    ?.replace(/[^A-Z0-9.% ]/gi, '')         // Elimina emojis pero deja espacios
+    .replace(/(\d+)%/g, '$1 %')             // Inserta espacio entre número y símbolo %
+    .replace(/\s+/g, ' ')                   // Normaliza espacios
     .trim()
-    .toUpperCase();                   // Mayúsculas
+    .toUpperCase();                         // Mayúsculas
 }
 
 function actualizarGrafico(filtrados) {
-  const premiosValidos = [
-    "100 % BONI",
-    "50 % BONI",
-    "20 % BONI",
-    "10.000 GRATIS",
-    "5.000 GRATIS",
-    "2.500 GRATIS"
-  ];
-
   const premiosContados = {};
-  premiosValidos.forEach(p => premiosContados[p] = 0);
 
   filtrados.forEach(reg => {
-    const limpio = limpiarPremio(reg.premio);
-    if (premiosContados.hasOwnProperty(limpio)) {
-      premiosContados[limpio]++;
-    }
+    const limpio = limpiarPremio(reg.premio || "");
+    if (!limpio) return;
+    premiosContados[limpio] = (premiosContados[limpio] || 0) + 1;
   });
 
   const labels = Object.keys(premiosContados);
   const datos = Object.values(premiosContados);
-  const total = datos.reduce((a, b) => a + b, 0);
-  const porcentajes = datos.map(cant => total ? ((cant / total) * 100).toFixed(1) : 0);
-
   const colores = [
-    "#f39c12", "#e67e22", "#3498db", "#2ecc71", "#9b59b6", "#c0392b"
+    "#f39c12", "#e67e22", "#3498db", "#2ecc71", "#9b59b6", "#c0392b",
+    "#1abc9c", "#e74c3c", "#95a5a6", "#34495e"
   ];
 
   const config = {
     type: 'bar',
     data: {
-      labels: labels,
+      labels,
       datasets: [{
         label: 'Cantidad de premios entregados',
         data: datos,
-        backgroundColor: colores
+        backgroundColor: colores.slice(0, labels.length)
       }]
     },
     options: {
@@ -160,10 +149,10 @@ function actualizarGrafico(filtrados) {
 
       if (error) return console.error('❌ Error:', error);
 
-      registros = data;
-      renderTable();
+            registros = data;
       llenarOpcionesCasino();
       llenarOpcionesJuego();
+      renderTable();
     }
     function renderTable() {
       const search = document.getElementById('searchInput').value.toLowerCase();
@@ -172,12 +161,24 @@ function actualizarGrafico(filtrados) {
       const fechaSeleccionada = document.getElementById('dateFilter').value;
       const tbody = document.getElementById('resultTable');
 
-      const filtrados = registros.filter(reg =>
-        (!search || reg.usuario?.toLowerCase().includes(search)) &&
-        (!casinoSeleccionado || reg.casino === casinoSeleccionado) &&
-        (!juegoSeleccionado || reg.juego === juegoSeleccionado) && 
-        (!fechaSeleccionada || reg.fecha === fechaSeleccionada)
-      );
+      const filtrados = registros.filter(reg => {
+  const casinoNormalizado =
+    reg.casino?.includes("ORO") ? "CASINO ORO" :
+    reg.casino?.includes("SHELBY") ? "CASINO SHELBY" :
+    reg.casino?.includes("CLAU") ? "CASINO CLAU712" : "";
+
+  reg.juegoInferido =
+  reg.casino === "CASINO ORO" ? "ruleta" :
+  reg.casino?.toLowerCase().includes("cartas") ? "cartas" :
+  "";
+
+  return (
+    (!search || reg.usuario?.toLowerCase().includes(search)) &&
+    (!casinoSeleccionado || casinoNormalizado === casinoSeleccionado) &&
+    (!juegoSeleccionado || reg.juegoInferido === juegoSeleccionado) &&
+    (!fechaSeleccionada || reg.fecha === fechaSeleccionada)
+  );
+});
 
       tbody.innerHTML = filtrados.length
         ? filtrados.map(reg => {
@@ -199,15 +200,19 @@ const horaLocal = horaARG.toTimeString().split(' ')[0]; // HH:MM:SS
     }
 
     function llenarOpcionesCasino() {
-      const select = document.getElementById('casinoFilter');
-      const casinosUnicos = [...new Set(registros.map(r => r.casino))];
-      casinosUnicos.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        select.appendChild(opt);
-      });
-    }
+  const select = document.getElementById('casinoFilter');
+  const valores = ["CASINO ORO", "CASINO SHELBY", "CASINO CLAU712"];
+
+  // 🔴 Limpiar todas las opciones salvo la primera
+  select.options.length = 1;
+
+  valores.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    select.appendChild(opt);
+  });
+}
 
     document.getElementById('searchInput').addEventListener('input', renderTable);
     document.getElementById('casinoFilter').addEventListener('change', renderTable);
@@ -215,17 +220,21 @@ const horaLocal = horaARG.toTimeString().split(' ')[0]; // HH:MM:SS
     document.getElementById('dateFilter').addEventListener('keyup', e => {
       if (e.key === 'Enter') renderTable();
     });
-
+document.getElementById('juegoFilter').addEventListener('change', renderTable);
     // Establecer la fecha por defecto al día actual
     document.getElementById('dateFilter').value = new Date().toISOString().split('T')[0];
 
 function llenarOpcionesJuego() {
   const select = document.getElementById('juegoFilter');
-  const juegosUnicos = [...new Set(registros.map(r => r.juego))];
-  juegosUnicos.forEach(j => {
+  const juegos = ["cartas", "ruleta"];
+
+  // 🔴 Limpiar todas las opciones salvo la primera
+  select.options.length = 1;
+
+  juegos.forEach(j => {
     const opt = document.createElement('option');
     opt.value = j;
-    opt.textContent = j;
+    opt.textContent = j === 'cartas' ? '🃏 Cartas' : '🎡 Ruleta';
     select.appendChild(opt);
   });
 }
