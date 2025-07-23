@@ -54,7 +54,7 @@
   <!-- 📊 Gráfico ajustado al espacio derecho -->
   <div style="flex-shrink: 0;">
     <div style="flex-shrink: 0; margin-top: 5px;">
-  <canvas id="graficoPremios" style="width: 450px; height: 200px; background: none; border: none; padding: 0;"></canvas>
+  <canvas id="graficoPremios" style="max-width: 100%; height: 200px; background: none; border: none; padding: 0;"></canvas>
 </div>
   </div>
 </div>
@@ -115,8 +115,20 @@ function actualizarGrafico(filtrados) {
       }]
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: {
-        legend: { display: false }
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          mode: 'index',
+          intersect: false
+        }
+      },
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
       },
       scales: {
         y: {
@@ -167,9 +179,10 @@ function actualizarGrafico(filtrados) {
     reg.casino?.includes("SHELBY") ? "CASINO SHELBY" :
     reg.casino?.includes("CLAU") ? "CASINO CLAU712" : "";
 
+    const casinoMin = reg.casino?.toLowerCase() || "";
   reg.juegoInferido =
-  reg.casino === "CASINO ORO" ? "ruleta" :
-  reg.casino?.toLowerCase().includes("cartas") ? "cartas" :
+  casinoMin.includes("cartas") ? "cartas" :
+  !casinoMin.includes("cartas") ? "ruleta" :
   "";
 
   return (
